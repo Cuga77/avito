@@ -23,6 +23,19 @@ services:
     networks:
       - pr-reviewer-network
 
+  migrator:
+    container_name: pr-reviewer-migrator
+    image: migrate/migrate
+    restart: on-failure
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgres://postgres:postgres@postgres:5432/pr_reviewer?sslmode=disable", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pr-reviewer-network
+
   api:
     container_name: pr-reviewer-api
     build:
@@ -41,8 +54,8 @@ services:
       DB_MAX_IDLE: 10
       DB_CONN_LIFETIME: 5m
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     networks:
       - pr-reviewer-network
     healthcheck:
