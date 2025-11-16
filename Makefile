@@ -22,7 +22,7 @@ build: ## Собрать Go-бинарник локально
 run: ## Запустить ВСЕ сервисы в Docker (App + DB + Migrator) - как в README
 	@echo "Запуск полного стека в Docker..."
 	@$(DC) up -d --build
-	@echo "Сервис доступен по адресу: http://localhost:8081"
+	@echo "Сервис доступен по адресу: http://localhost:8080"
 
 run-local: ## Запустить приложение локально (Go), а БД в Docker
 	@echo "Подготовка БД в Docker..."
@@ -45,7 +45,7 @@ logs: ## Показать логи сервиса API
 
 health: ## Проверить здоровье API (curl)
 	@echo "Проверка healthcheck..."
-	@curl -s http://localhost:8081/health | jq . || echo "API недоступен"
+	@curl -s http://localhost:8080/health | jq . || echo "API недоступен"
 
 test: ## Запустить Unit-тесты
 	@echo "Запуск unit тестов..."
@@ -55,13 +55,13 @@ test-e2e: ## Запустить E2E тесты
 	@echo "Запуск E2E тестов..."
 	@go test -v ./tests/e2e/...
 
-test-load-smoke: ## Запустить Smoke тест (k6, настройки по умолчанию из скрипта)
+test-load-smoke: ## Запустить Smoke тест (k6, 10 секунд, 1 VU)
 	@echo "Запуск k6 smoke test..."
-	@docker run --rm -i -v $(PWD)/tests:/tests --network host -e BASE_URL=http://localhost:8081 grafana/k6:latest run /tests/k6/load_test.js
+	@docker run --rm -i -v $(PWD)/tests:/tests --network host -e BASE_URL=http://localhost:8080 -e SMOKE=true grafana/k6:latest run /tests/k6/load_test.js
 
 test-load-stress: ## Запустить Stress тест (k6, 100 VUs, 5 минут)
 	@echo "Запуск k6 stress test..."
-	@docker run --rm -i -v $(PWD)/tests:/tests --network host -e BASE_URL=http://localhost:8081 grafana/k6:latest run --vus 100 --duration 5m /tests/k6/load_test.js
+	@docker run --rm -i -v $(PWD)/tests:/tests --network host -e BASE_URL=http://localhost:8080 grafana/k6:latest run --vus 100 --duration 5m /tests/k6/load_test.js
 
 lint: ## Запустить линтер (golangci-lint)
 	@echo "Запуск линтера..."
