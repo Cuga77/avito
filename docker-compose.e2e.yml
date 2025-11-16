@@ -1,0 +1,76 @@
+version: '3.9'
+services:
+  postgres_e2e:
+    container_name: pr-reviewer-postgres-e2e
+    image: postgres:18-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_DB: pr_reviewer_e2e
+      POSTGRES_USER: postgres_e2e
+      POSTGRES_PASSWORD: postgres_e2e_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_e2e_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_e2e -d pr_reviewer_e2e"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - pr-reviewer-e2e-network
+
+  api_e2e:
+    container_name: pr-reviewer-api-e2e
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: on-failure
+    ports:
+      - "8081:8080" 
+    environment:
+      DATABASE_URL: postgres://postgres_e2e:postgres_e2e_password@postgres_e2e:5432/pr_reviewer_e2e?sslmode=disable
+      SERVER_PORT: 8080
+      LOG_LEVEL: debug
+      LOG_FORMAT: json
+      APP_ENV: test
+      DB_MAX_CONNECTIONS: 10
+      DB_MAX_IDLE: 5
+      DB_CONN_LIFETIME: 5m
+    depends_on:
+      postgres_e2e:
+        condition: service_healthy
+    networks:
+      - pr-reviewer-e2e-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  e2e_tests:
+    container_name: pr-reviewer-e2e-tests
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
+    environment:
+      API_BASE_URL: http://api_e2e:8080
+      TEST_TIMEOUT: 60s
+    depends_on:
+      api_e2e:
+        condition: service_healthy
+    networks:
+      - pr-reviewer-e2e-network
+    command: ["go", "test", "-v", "./tests/e2e/..."]
+
+volumes:
+  postgres_e2e_data:
+    driver: local
+
+networks:
+  pr-reviewer-e2e-network:
+    driver: bridge
+    name: pr-reviewer-e2e-network

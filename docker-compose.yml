@@ -3,7 +3,7 @@ version: '3.9'
 services:
   postgres:
     container_name: pr-reviewer-postgres
-    image: postgres:18-alpine
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: pr_reviewer

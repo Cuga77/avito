@@ -1,0 +1,41 @@
+run:
+  timeout: 5m
+  go: '1.23'
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck      # Проверка обработки ошибок
+    - gosimple      # Упрощение кода
+    - govet         # Стандартные проверки Go
+    - ineffassign   # Бесполезные присваивания
+    - staticcheck   # Статический анализ
+    - unused        # Неиспользуемый код
+    - typecheck     # Проверка типов
+    - bodyclose     # Закрытие HTTP body
+    - gofmt         # Форматирование
+    - goimports     # Импорты
+    - misspell      # Опечатки
+
+linters-settings:
+  goimports:
+    local-prefixes: avito
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+      - shadow
+
+issues:
+  exclude-rules:
+    - linters:
+        - revive
+      text: "exported: (method|function|type|const|var) .+ should have comment"
+
+    - path: _test\.go
+      linters:
+        - errcheck
+
+    - linters:
+        - gosec
+      text: "G404"
