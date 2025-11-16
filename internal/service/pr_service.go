@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math/rand/v2"
+	"math/rand"
 
 	"avito/internal/domain"
 	"avito/internal/repository"
@@ -61,7 +61,9 @@ func (s *prService) CreatePR(ctx context.Context, prID, prName, authorID string)
 		Name:    team.Name,
 		Members: teamMembers,
 	}
-	reviewers := s.findReviewers(ctx, &teamDomain, authorID)
+
+	reviewers := s.findReviewers(&teamDomain, authorID)
+
 	reviewerIDs := make([]string, 0, len(reviewers))
 	for _, r := range reviewers {
 		reviewerIDs = append(reviewerIDs, r.UserID)
@@ -73,13 +75,15 @@ func (s *prService) CreatePR(ctx context.Context, prID, prName, authorID string)
 		Status:            domain.PRStatusOpen,
 		AssignedReviewers: reviewerIDs,
 	}
+
 	if err = pr.Validate(); err != nil {
 		return nil, err
 	}
 	pr.PrepareForDB()
+
 	err = s.db.WithTransaction(ctx, func(tx *sql.Tx) error {
 		txPRRepo := postgres.NewPullRequestRepository(tx)
-		if err = txPRRepo.Create(ctx, pr); err != nil {
+		if err := txPRRepo.Create(ctx, pr); err != nil {
 			return fmt.Errorf("failed to create PR in repo: %w", err)
 		}
 		return nil
@@ -91,7 +95,7 @@ func (s *prService) CreatePR(ctx context.Context, prID, prName, authorID string)
 	return pr, nil
 }
 
-func (s *prService) findReviewers(_ context.Context, team *domain.Team, authorID string) []*domain.TeamMember {
+func (s *prService) findReviewers(team *domain.Team, authorID string) []*domain.TeamMember {
 	candidates := team.GetActiveMembersExcluding(authorID)
 	if len(candidates) == 0 {
 		return []*domain.TeamMember{}
@@ -99,7 +103,9 @@ func (s *prService) findReviewers(_ context.Context, team *domain.Team, authorID
 	if len(candidates) <= 2 {
 		return candidates
 	}
-	rand.Shuffle(len(candidates), func(i, j int) {
+
+	// Используем nolint для gosec (G404), т.к. здесь криптостойкость не нужна
+	rand.Shuffle(len(candidates), func(i, j int) { //nolint:gosec
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	})
 	return candidates[:2]
@@ -113,10 +119,12 @@ func (s *prService) MergePR(ctx context.Context, prID string) (*domain.PullReque
 	if pr.IsMerged() {
 		return pr, nil
 	}
-	if err := s.prRepo.Merge(ctx, prID, domain.PRStatusIDMerged); err != nil {
+
+	updatedPR, err := s.prRepo.Merge(ctx, prID, domain.PRStatusIDMerged)
+	if err != nil {
 		return nil, fmt.Errorf("failed to merge PR: %w", err)
 	}
-	return s.prRepo.Get(ctx, prID)
+	return updatedPR, nil
 }
 
 func (s *prService) ReassignReviewer(ctx context.Context, prID, oldReviewerID string) (*domain.PullRequest, string, error) {
@@ -163,7 +171,9 @@ func (s *prService) ReassignReviewer(ctx context.Context, prID, oldReviewerID st
 		if len(candidates) == 0 {
 			return domain.ErrNoCandidate
 		}
-		newReviewer := candidates[rand.IntN(len(candidates))]
+
+		// Используем nolint для gosec (G404)
+		newReviewer := candidates[rand.Intn(len(candidates))] //nolint:gosec
 		newReviewerID = newReviewer.UserID
 		if err := txPRRepo.ReplaceReviewer(ctx, prID, oldReviewerID, newReviewerID); err != nil {
 			return fmt.Errorf("failed to replace reviewer in repo: %w", err)

@@ -36,12 +36,35 @@ func (r *PullRequestRepository) Create(ctx context.Context, pr *domain.PullReque
 		}
 		return fmt.Errorf("failed to create pull request: %w", err)
 	}
-	for _, reviewerID := range pr.AssignedReviewers {
-		if err := r.AddReviewer(ctx, pr.PullRequestID, reviewerID); err != nil {
-			return fmt.Errorf("failed to add reviewer %s: %w", reviewerID, err)
+
+	if len(pr.AssignedReviewers) > 0 {
+		if err := r.addReviewersBatch(ctx, pr.PullRequestID, pr.AssignedReviewers); err != nil {
+			return fmt.Errorf("failed to add reviewers: %w", err)
 		}
 	}
 	return nil
+}
+
+func (r *PullRequestRepository) addReviewersBatch(ctx context.Context, prID string, reviewerIDs []string) error {
+	if len(reviewerIDs) == 0 {
+		return nil
+	}
+
+	query := "INSERT INTO pr_reviewers (pull_request_id, user_id) VALUES "
+	args := make([]interface{}, 0, len(reviewerIDs)*2)
+
+	for i, reviewerID := range reviewerIDs {
+		if i > 0 {
+			query += ","
+		}
+		query += fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
+		args = append(args, prID, reviewerID)
+	}
+
+	query += " ON CONFLICT (pull_request_id, user_id) DO NOTHING"
+
+	_, err := r.db.ExecContext(ctx, query, args...)
+	return err
 }
 
 func (r *PullRequestRepository) Get(ctx context.Context, prID string) (*domain.PullRequest, error) {
@@ -129,7 +152,7 @@ func (r *PullRequestRepository) GetReviewers(ctx context.Context, prID string) (
 		return nil, fmt.Errorf("failed to get reviewers: %w", err)
 	}
 	defer rows.Close()
-	reviewers := make([]string, 0)
+	var reviewers []string
 	for rows.Next() {
 		var reviewerID string
 		if err := rows.Scan(&reviewerID); err != nil {
@@ -152,14 +175,8 @@ func (r *PullRequestRepository) SetReviewers(ctx context.Context, prID string, r
 		return fmt.Errorf("failed to delete existing reviewers: %w", err)
 	}
 	if len(reviewerIDs) > 0 {
-		insertQuery := `
-            INSERT INTO pr_reviewers (pull_request_id, user_id)
-            VALUES ($1, $2)
-        `
-		for _, reviewerID := range reviewerIDs {
-			if _, err := r.db.ExecContext(ctx, insertQuery, prID, reviewerID); err != nil {
-				return fmt.Errorf("failed to add reviewer %s: %w", reviewerID, err)
-			}
+		if err := r.addReviewersBatch(ctx, prID, reviewerIDs); err != nil {
+			return fmt.Errorf("failed to set reviewers: %w", err)
 		}
 	}
 	return nil
@@ -383,7 +400,7 @@ func (r *PullRequestRepository) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-func (r *PullRequestRepository) Merge(ctx context.Context, prID string, mergedStatusID int16) error {
+func (r *PullRequestRepository) Merge(ctx context.Context, prID string, mergedStatusID int16) (*domain.PullRequest, error) {
 	query := `
         UPDATE pull_requests
         SET
@@ -391,14 +408,37 @@ func (r *PullRequestRepository) Merge(ctx context.Context, prID string, mergedSt
             merged_at = COALESCE(merged_at, $3)
         WHERE
             id = $1
+        RETURNING id, pull_request_name, author_id, status_id, created_at, merged_at
     `
-	result, err := r.db.ExecContext(ctx, query, prID, mergedStatusID, time.Now())
+
+	var pr domain.PullRequest
+	var mergedAt sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, query, prID, mergedStatusID, time.Now()).Scan(
+		&pr.PullRequestID,
+		&pr.PullRequestName,
+		&pr.AuthorID,
+		&pr.StatusID,
+		&pr.CreatedAt,
+		&mergedAt,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to merge pull request: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrPRNotFound
+		}
+		return nil, fmt.Errorf("failed to merge pull request: %w", err)
 	}
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return domain.ErrPRNotFound
+
+	if mergedAt.Valid {
+		pr.MergedAt = &mergedAt.Time
 	}
-	return nil
+	pr.SyncStatus()
+
+	reviewers, err := r.GetReviewers(ctx, prID)
+	if err != nil {
+		return nil, err
+	}
+	pr.AssignedReviewers = reviewers
+
+	return &pr, nil
 }

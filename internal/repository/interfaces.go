@@ -44,7 +44,7 @@ type PullRequestRepository interface {
 	GetOpenPRs(ctx context.Context) ([]*domain.PullRequest, error)
 	List(ctx context.Context) ([]*domain.PullRequest, error)
 	Count(ctx context.Context) (int, error)
-	Merge(ctx context.Context, prID string, mergedStatusID int16) error
+	Merge(ctx context.Context, prID string, mergedStatusID int16) (*domain.PullRequest, error)
 }
 
 type TaskRepository interface {
