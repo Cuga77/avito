@@ -83,7 +83,7 @@ func (s *prService) CreatePR(ctx context.Context, prID, prName, authorID string)
 
 	err = s.db.WithTransaction(ctx, func(tx *sql.Tx) error {
 		txPRRepo := postgres.NewPullRequestRepository(tx)
-		if err := txPRRepo.Create(ctx, pr); err != nil {
+		if err = txPRRepo.Create(ctx, pr); err != nil {
 			return fmt.Errorf("failed to create PR in repo: %w", err)
 		}
 		return nil
@@ -104,8 +104,7 @@ func (s *prService) findReviewers(team *domain.Team, authorID string) []*domain.
 		return candidates
 	}
 
-	// Используем nolint для gosec (G404), т.к. здесь криптостойкость не нужна
-	rand.Shuffle(len(candidates), func(i, j int) { //nolint:gosec
+	rand.Shuffle(len(candidates), func(i, j int) {
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	})
 	return candidates[:2]
@@ -128,61 +127,55 @@ func (s *prService) MergePR(ctx context.Context, prID string) (*domain.PullReque
 }
 
 func (s *prService) ReassignReviewer(ctx context.Context, prID, oldReviewerID string) (*domain.PullRequest, string, error) {
-	var newReviewerID string
-	err := s.db.WithTransaction(ctx, func(tx *sql.Tx) error {
-		txPRRepo := postgres.NewPullRequestRepository(tx)
-		txUserRepo := postgres.NewUserRepository(tx)
-		txTeamRepo := postgres.NewTeamRepository(tx)
-		pr, err := txPRRepo.Get(ctx, prID)
-		if err != nil {
-			return err
-		}
-		if !pr.CanBeModified() {
-			return domain.ErrPRMerged
-		}
-		if !pr.HasReviewer(oldReviewerID) {
-			return domain.ErrNotAssigned
-		}
-		oldReviewer, err := txUserRepo.Get(ctx, oldReviewerID)
-		if err != nil {
-			return fmt.Errorf("failed to get old reviewer: %w", err)
-		}
-		team, err := txTeamRepo.GetByID(ctx, oldReviewer.TeamID)
-		if err != nil {
-			return fmt.Errorf("failed to get old reviewer's team: %w", err)
-		}
-		teamMembersDB, err := txUserRepo.GetByTeamID(ctx, team.ID)
-		if err != nil {
-			return fmt.Errorf("failed to get team members: %w", err)
-		}
-		teamMembers := make([]*domain.TeamMember, 0, len(teamMembersDB))
-		for _, u := range teamMembersDB {
-			teamMembers = append(teamMembers, u.ToTeamMember())
-		}
-		teamDomain := domain.Team{
-			ID:      team.ID,
-			Name:    team.Name,
-			Members: teamMembers,
-		}
-		excludeIDs := make([]string, 0, len(pr.AssignedReviewers)+1)
-		excludeIDs = append(excludeIDs, pr.AuthorID)
-		excludeIDs = append(excludeIDs, pr.AssignedReviewers...)
-		candidates := teamDomain.GetActiveMembersExcluding(excludeIDs...)
-		if len(candidates) == 0 {
-			return domain.ErrNoCandidate
-		}
-
-		// Используем nolint для gosec (G404)
-		newReviewer := candidates[rand.Intn(len(candidates))] //nolint:gosec
-		newReviewerID = newReviewer.UserID
-		if err := txPRRepo.ReplaceReviewer(ctx, prID, oldReviewerID, newReviewerID); err != nil {
-			return fmt.Errorf("failed to replace reviewer in repo: %w", err)
-		}
-		return nil
-	})
+	pr, err := s.prRepo.Get(ctx, prID)
 	if err != nil {
 		return nil, "", err
 	}
+	if !pr.CanBeModified() {
+		return nil, "", domain.ErrPRMerged
+	}
+	if !pr.HasReviewer(oldReviewerID) {
+		return nil, "", domain.ErrNotAssigned
+	}
+
+	oldReviewer, err := s.userRepo.Get(ctx, oldReviewerID)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get old reviewer: %w", err)
+	}
+	team, err := s.teamRepo.GetByID(ctx, oldReviewer.TeamID)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get old reviewer's team: %w", err)
+	}
+	teamMembersDB, err := s.userRepo.GetByTeamID(ctx, team.ID)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get team members: %w", err)
+	}
+	teamMembers := make([]*domain.TeamMember, 0, len(teamMembersDB))
+	for _, u := range teamMembersDB {
+		teamMembers = append(teamMembers, u.ToTeamMember())
+	}
+	teamDomain := domain.Team{
+		ID:      team.ID,
+		Name:    team.Name,
+		Members: teamMembers,
+	}
+
+	excludeIDs := make([]string, 0, len(pr.AssignedReviewers)+1)
+	excludeIDs = append(excludeIDs, pr.AuthorID)
+	excludeIDs = append(excludeIDs, pr.AssignedReviewers...)
+
+	candidates := teamDomain.GetActiveMembersExcluding(excludeIDs...)
+	if len(candidates) == 0 {
+		return nil, "", domain.ErrNoCandidate
+	}
+
+	newReviewer := candidates[rand.Intn(len(candidates))]
+	newReviewerID := newReviewer.UserID
+
+	if err = s.prRepo.ReplaceReviewer(ctx, prID, oldReviewerID, newReviewerID); err != nil {
+		return nil, "", fmt.Errorf("failed to replace reviewer in repo: %w", err)
+	}
+
 	updatedPR, err := s.prRepo.Get(ctx, prID)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get updated PR: %w", err)
