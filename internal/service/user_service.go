@@ -5,27 +5,50 @@ import (
 	"fmt"
 
 	"avito/internal/domain"
-	"avito/internal/repository"
 	"avito/pkg/logger"
 )
 
+type userRepoForUserService interface {
+	Get(ctx context.Context, userID string) (*domain.User, error)
+	SetActive(ctx context.Context, userID string, isActive bool) error
+	Exists(ctx context.Context, userID string) (bool, error)
+	GetByTeamID(ctx context.Context, teamID int) ([]*domain.User, error)
+	GetActiveByTeamID(ctx context.Context, teamID int) ([]*domain.User, error)
+}
+
+type prRepoForUserService interface {
+	GetByReviewer(ctx context.Context, userID string, openStatusID int16) ([]*domain.PullRequestShort, error)
+}
+
+type teamRepoForUserService interface {
+	ExistsByID(ctx context.Context, teamID int) (bool, error)
+}
+
+type taskRepoForUserService interface {
+	CreateDeactivateTask(ctx context.Context, teamID int) error
+}
+
+type prServiceForUserService interface {
+	ReassignReviewer(ctx context.Context, prID, oldUserID string) (*domain.PullRequest, string, error)
+}
+
 type userService struct {
-	userRepo  repository.UserRepository
-	prRepo    repository.PullRequestRepository
-	prService PRService
-	teamRepo  repository.TeamRepository
-	taskRepo  repository.TaskRepository
+	userRepo  userRepoForUserService
+	prRepo    prRepoForUserService
+	prService prServiceForUserService
+	teamRepo  teamRepoForUserService
+	taskRepo  taskRepoForUserService
 	logger    *logger.Logger
 }
 
 func NewUserService(
-	userRepo repository.UserRepository,
-	prRepo repository.PullRequestRepository,
-	prService PRService,
-	teamRepo repository.TeamRepository,
-	taskRepo repository.TaskRepository,
+	userRepo userRepoForUserService,
+	prRepo prRepoForUserService,
+	prService prServiceForUserService,
+	teamRepo teamRepoForUserService,
+	taskRepo taskRepoForUserService,
 	logger *logger.Logger,
-) UserService {
+) *userService {
 	return &userService{
 		userRepo:  userRepo,
 		prRepo:    prRepo,
@@ -144,6 +167,6 @@ func (s *userService) ScheduleBatchDeactivate(ctx context.Context, teamID int) e
 		return fmt.Errorf("failed to schedule task: %w", err)
 	}
 
-	s.logger.Info("Batch deactivation task created", "team_id", teamID)
+	s.logger.Info("Задача на массовую деактивацию успешно создана", "team_id", teamID)
 	return nil
 }

@@ -4,21 +4,32 @@ import (
 	"context"
 	"fmt"
 
-	"avito/internal/repository"
 	"avito/pkg/logger"
 )
 
+type userRepoForStats interface {
+	Count(ctx context.Context) (int, error)
+}
+
+type teamRepoForStats interface {
+	Count(ctx context.Context) (int, error)
+}
+
+type prRepoForStats interface {
+	Count(ctx context.Context) (int, error)
+}
+
 type StatsService struct {
-	userRepo repository.UserRepository
-	teamRepo repository.TeamRepository
-	prRepo   repository.PullRequestRepository
+	userRepo userRepoForStats
+	teamRepo teamRepoForStats
+	prRepo   prRepoForStats
 	logger   *logger.Logger
 }
 
 func NewStatsService(
-	prRepo repository.PullRequestRepository,
-	userRepo repository.UserRepository,
-	teamRepo repository.TeamRepository,
+	prRepo prRepoForStats,
+	userRepo userRepoForStats,
+	teamRepo teamRepoForStats,
 	logger *logger.Logger,
 ) *StatsService {
 	return &StatsService{
@@ -40,18 +51,22 @@ func (s *StatsService) GetGlobalStats(ctx context.Context) (*GlobalStats, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count users: %w", err)
 	}
+
 	teams, err := s.teamRepo.Count(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count teams: %w", err)
 	}
+
 	prs, err := s.prRepo.Count(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count prs: %w", err)
 	}
+
 	stats := &GlobalStats{
 		TotalUsers: users,
 		TotalTeams: teams,
 		TotalPRs:   prs,
 	}
+
 	return stats, nil
 }

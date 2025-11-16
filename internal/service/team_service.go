@@ -6,22 +6,32 @@ import (
 	"fmt"
 
 	"avito/internal/domain"
-	"avito/internal/repository"
 
 	"avito/internal/repository/postgres"
 )
 
+type teamRepoForTeamService interface {
+	Create(ctx context.Context, team *domain.Team) error
+	Get(ctx context.Context, teamName string) (*domain.Team, error)
+	Exists(ctx context.Context, teamName string) (bool, error)
+}
+
+type userRepoForTeamService interface {
+	CreateOrUpdate(ctx context.Context, user *domain.User) error
+	GetByTeamID(ctx context.Context, teamID int) ([]*domain.User, error)
+}
+
 type teamService struct {
 	db       *postgres.DB
-	teamRepo repository.TeamRepository
-	userRepo repository.UserRepository
+	teamRepo teamRepoForTeamService
+	userRepo userRepoForTeamService
 }
 
 func NewTeamService(
 	db *postgres.DB,
-	teamRepo repository.TeamRepository,
-	userRepo repository.UserRepository,
-) TeamService {
+	teamRepo teamRepoForTeamService,
+	userRepo userRepoForTeamService,
+) *teamService {
 	return &teamService{
 		db:       db,
 		teamRepo: teamRepo,
@@ -60,7 +70,6 @@ func (s *teamService) CreateTeamWithMembers(ctx context.Context, team *domain.Te
 				TeamID:   teamID,
 				IsActive: member.IsActive,
 			}
-
 			if err = txUserRepo.CreateOrUpdate(ctx, user); err != nil {
 				return fmt.Errorf("failed to create/update user %s: %w", member.UserID, err)
 			}
@@ -72,6 +81,16 @@ func (s *teamService) CreateTeamWithMembers(ctx context.Context, team *domain.Te
 		}
 
 		createdTeam = createdTeamDB
+
+		membersDB, err := txUserRepo.GetByTeamID(ctx, createdTeamDB.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get team members: %w", err)
+		}
+		teamMembers := make([]*domain.TeamMember, 0, len(membersDB))
+		for _, u := range membersDB {
+			teamMembers = append(teamMembers, u.ToTeamMember())
+		}
+		createdTeam.Members = teamMembers
 
 		return nil
 	})

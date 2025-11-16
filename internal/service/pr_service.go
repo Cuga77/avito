@@ -5,25 +5,46 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/rand" //nolint:gosec
 
 	"avito/internal/domain"
-	"avito/internal/repository"
 	"avito/internal/repository/postgres"
 )
 
+type PRService interface {
+	CreatePR(ctx context.Context, prID, prName, authorID string) (*domain.PullRequest, error)
+	MergePR(ctx context.Context, prID string) (*domain.PullRequest, error)
+	ReassignReviewer(ctx context.Context, prID, oldReviewerID string) (*domain.PullRequest, string, error)
+}
+
+type prRepoForPRService interface {
+	Create(ctx context.Context, pr *domain.PullRequest) error
+	Get(ctx context.Context, prID string) (*domain.PullRequest, error)
+	Merge(ctx context.Context, prID string, mergedStatusID int16) (*domain.PullRequest, error)
+	ReplaceReviewer(ctx context.Context, prID, oldReviewerID, newUserID string) error
+}
+
+type userRepoForPRService interface {
+	Get(ctx context.Context, userID string) (*domain.User, error)
+	GetByTeamID(ctx context.Context, teamID int) ([]*domain.User, error)
+}
+
+type teamRepoForPRService interface {
+	GetByID(ctx context.Context, teamID int) (*domain.Team, error)
+}
+
 type prService struct {
 	db       *postgres.DB
-	prRepo   repository.PullRequestRepository
-	userRepo repository.UserRepository
-	teamRepo repository.TeamRepository
+	prRepo   prRepoForPRService
+	userRepo userRepoForPRService
+	teamRepo teamRepoForPRService
 }
 
 func NewPRService(
 	db *postgres.DB,
-	prRepo repository.PullRequestRepository,
-	userRepo repository.UserRepository,
-	teamRepo repository.TeamRepository,
+	prRepo prRepoForPRService,
+	userRepo userRepoForPRService,
+	teamRepo teamRepoForPRService,
 ) PRService {
 	return &prService{
 		db:       db,
@@ -52,6 +73,7 @@ func (s *prService) CreatePR(ctx context.Context, prID, prName, authorID string)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get team members: %w", err)
 	}
+
 	teamMembers := make([]*domain.TeamMember, 0, len(teamMembersDB))
 	for _, u := range teamMembersDB {
 		teamMembers = append(teamMembers, u.ToTeamMember())
@@ -104,6 +126,7 @@ func (s *prService) findReviewers(team *domain.Team, authorID string) []*domain.
 		return candidates
 	}
 
+	//nolint:gosec
 	rand.Shuffle(len(candidates), func(i, j int) {
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	})
@@ -150,6 +173,7 @@ func (s *prService) ReassignReviewer(ctx context.Context, prID, oldReviewerID st
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get team members: %w", err)
 	}
+
 	teamMembers := make([]*domain.TeamMember, 0, len(teamMembersDB))
 	for _, u := range teamMembersDB {
 		teamMembers = append(teamMembers, u.ToTeamMember())
@@ -169,6 +193,7 @@ func (s *prService) ReassignReviewer(ctx context.Context, prID, oldReviewerID st
 		return nil, "", domain.ErrNoCandidate
 	}
 
+	//nolint:gosec
 	newReviewer := candidates[rand.Intn(len(candidates))]
 	newReviewerID := newReviewer.UserID
 
