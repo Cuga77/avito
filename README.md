@@ -15,12 +15,14 @@
 
 ```bash
 make run
+# Или docker-compose up
 ```
 
 **2. Проверить, что API доступен:**
 
 ```bash
-curl http://localhost:8080/health | jq .
+curl -s http://localhost:8080/health | jq .
+# Или без jq: curl -v http://localhost:8080/health
 ```
 
 ```json
