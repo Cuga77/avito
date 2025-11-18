@@ -20,7 +20,7 @@ make run
 **2. Проверить, что API доступен:**
 
 ```bash
-curl -s http://localhost:8081/health | jq .
+curl http://localhost:8080/health | jq .
 ```
 
 ```json
@@ -36,7 +36,7 @@ curl -s http://localhost:8081/health | jq .
 make down
 ```
 
-Сервис будет доступен по адресу `http://localhost:8081`.
+Сервис будет доступен по адресу `http://localhost:8080`.
 
 -----
 
@@ -96,39 +96,52 @@ make test-load-stress
 ```
   █ THRESHOLDS
 
+    critical_errors
+    ✓ 'rate<0.05' rate=0.00%
+
     http_req_duration
-    ✓ 'p(95)<500' p(95)=82.74ms
-    ✓ 'p(99)<1000' p(99)=145.14ms
+    ✓ 'p(95)<500' p(95)=74.9ms
+    ✓ 'p(99)<2000' p(99)=115.19ms
+
 
   █ TOTAL RESULTS
 
-    checks_total.......: 86652   283.218173/s
-    checks_succeeded...: 100.00% 86652 out of 86652
-    checks_failed......: 0.00%   0 out of 86652
+    checks_total.......: 151907  504.541339/s
+    checks_succeeded...: 100.00% 151907 out of 151907
+    checks_failed......: 0.00%   0 out of 151907
 
     ✓ health check status is 200
     ✓ create team status is 201
-    ✓ create team returns team_name
     ✓ get team status is 200
-    ✓ get team returns members
     ✓ create PR status is 201
-    ✓ create PR has reviewers
-    ✓ create PR author not in reviewers
     ✓ get user reviews status is 200
-    ✓ get user reviews contains PR
     ✓ merge PR status is 200
-    ✓ merge PR sets status to MERGED
     ✓ merge PR again status is 200
-    ✓ merge PR idempotent
-    ✓ reassign after merge should fail
 
     CUSTOM
     critical_errors................: 0.00%  0 out of 0
 
     HTTP
-    http_req_duration..............: avg=29ms    min=281.56µs med=7.03ms  max=718.76ms p(90)=64.82ms p(95)=82.74ms
-    http_req_failed................: 11.11%
-    http_reqs......................: 43326   141.609086/s
+    http_req_duration..............: avg=25.63ms min=289.36µs med=13.01ms max=643.46ms p(90)=59.9ms p(95)=74.9ms
+      { expected_response:true }...: avg=25.63ms min=289.36µs med=13.01ms max=643.46ms p(90)=59.9ms p(95)=74.9ms
+    http_req_failed................: 0.00%  0 out of 151907
+    http_reqs......................: 151907 504.541339/s
+
+    EXECUTION
+    iteration_duration.............: avg=1.38s   min=1.22s    med=1.38s   max=1.98s    p(90)=1.44s  p(95)=1.46s
+    iterations.....................: 21701  72.077334/s
+    vus............................: 1      min=1           max=100
+    vus_max........................: 100    min=100         max=100
+
+    NETWORK
+    data_received..................: 61 MB  201 kB/s
+    data_sent......................: 33 MB  108 kB/s
+
+
+
+
+running (5m01.1s), 000/100 VUs, 21701 complete and 0 interrupted iterations
+default ✓ [ 100% ] 100 VUs  5m0s
 ```
 
 -----
